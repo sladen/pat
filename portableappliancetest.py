@@ -72,7 +72,6 @@
 # Add option to output .csv
 
 import struct, sys
-from encodings import utf_16_le
 import string
 import collections
 
@@ -257,6 +256,8 @@ import functools
 from functools import partial
 
 def main(filename = 'SSS'):
+    if len(sys.argv) > 1:
+        filename = sys.argv[1]
     f = open(filename, 'r')
     r = SSSRecordHeader()
     for header in iter(lambda: f.read(len(r)), ''):
