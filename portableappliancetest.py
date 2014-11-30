@@ -3,7 +3,7 @@
 # Paul Sladen, 2014-11-25, Seaward SSS PAT testing file format debug harness
 # Hereby placed in the public domain in the hopes of improving
 # electrical safety and interoperability
-# Usage: ./portableappliancetester.py <input.sss>
+# Usage: ./portableappliancetest.py <input.sss>
 #
 # = PAT Testing =
 # Portable Appliance Testing (PAT Inspections) are tests undertaken on
@@ -177,12 +177,21 @@ class SSSEarthResistanceTest(SSS):
         self.data['pass'] = bool(self.data['resistance'] >> 15)
         self.data['resistance'] = 0.01 * (self.data['resistance'] & 0x7fff)
 
+class SSSEarthResistanceTestv2(SSS):
+    fields = [('current', int, 1),
+              ('samples', int, 1),
+              ('resistance', int, 2),
+              ]
+    def fixup(self):
+        self.data['pass'] = bool(self.data['resistance'] >> 15)
+        self.data['resistance'] = 0.01 * (self.data['resistance'] & 0x7fff)
+
 class SSSEarthInsulationTest(SSS):
     fields = [('resistance', int, 2),
               ]
     def fixup(self):
-        self.data['pass'] = not bool(self.data['resistance'] >> 15)
-        self.data['actual_resistance'] = 0.01 * self.data['resistance'] 
+        self.data['overscale'] = not bool(self.data['resistance'] >> 15)
+        self.data['actual_resistance'] = 0.01 * (self.data['resistance'] & 0x7fff)
         # Note: the displayed resistance for the Earth Insulation test
         # is capped at 19.99 MOhms or 99.99 MOhms depending upon the
         # model of meter.  Internally the meters appears to treat
@@ -191,6 +200,15 @@ class SSSEarthInsulationTest(SSS):
         # For simple result reporting, the value is capped to 99.99
         # MOhms, inline which what other software (and the meter's
         # display) does.
+        self.data['resistance'] = min(99.99, 0.01 * (self.data['resistance'] & 0x7fff))
+
+class SSSEarthInsulationTestv2(SSS):
+    fields = [('samples', int, 1),
+              ('resistance', int, 2),
+              ]
+    def fixup(self):
+        self.data['overscale'] = not bool(self.data['resistance'] >> 15)
+        self.data['actual_resistance'] = 0.01 * (self.data['resistance'] & 0x7fff)
         self.data['resistance'] = min(99.99, 0.01 * (self.data['resistance'] & 0x7fff))
 
 class SSSPowerLeakTest(SSS):
@@ -205,6 +223,16 @@ class SSSPowerLeakTest(SSS):
         self.data['load'] = 0.1/16.0 * self.data['load']
         self.data['leakage'] = 0.01 * (self.data['leakage'] & 0x7fff)
 
+class SSSPowerLeakTestv2(SSS):
+    fields = [('samples', int, 1),
+              ('leakage', int, 2),
+              ('load', int, 2),
+              ]
+    def fixup(self):
+        self.data['pass'] = bool(self.data['leakage'] >> 15)
+        self.data['load'] = 0.01 * self.data['load']
+        self.data['leakage'] = 0.1 * (self.data['leakage'] & 0x7fff)
+
 class SSSContinuityTest(SSS):
     fields = [('resistance', int, 2),
               ]
@@ -218,6 +246,44 @@ class SSSContinuityTest(SSS):
             self.data['resistance'] = '(no result)'
         else:
             self.data['resistance'] = 0.01 * (self.data['resistance'] & 0x7fff)
+
+class SSSContinuityTestv2(SSS):
+    fields = [('samples', int, 1),
+              ('resistance', int, 2),
+              ]
+    def fixup(self):
+        self.data['pass'] = bool(self.data['resistance'] >> 15)
+        # Zero appears to correspond to infinity (no connection).
+        # Which at least one other output software apparently shows as
+        # "(no result)", instead of a numerical value.  This reported
+        # behaviour is copied here.
+        if self.data['resistance'] & 0x7fff == 0:
+            self.data['resistance'] = '(no result)'
+        else:
+            self.data['resistance'] = 0.01 * (self.data['resistance'] & 0x7fff)
+
+class SSSUnknownE0Test(SSS):
+    # Alternatively (0xe1 0x00 could be the baud rate at 57600)
+    fields = [('samples', int, 1),
+              ('unknown1', int, 1),
+              ('unknown2', int, 1),
+              ('unknown3', int, 1),
+              ]
+
+class SSSRetestTest(SSS):
+    fields = [('nulls', int, 1),
+              ('unknown', int, 1),
+              ('frequency', int, 1),
+              ]
+
+class SSSSoftwareVersionTest(SSS):
+    # Serial number matches format of examples on:
+    # http://www.seaward.co.uk/faqs/pat-testers/how-do-i-download-my-primetest-3xx-
+    fields = [('serialnumber', str, 11),
+              ('firmware1', int, 1),
+              ('firmware2', int, 1),
+              ('firmware3', int, 1),
+              ]
 
 class SSSUserDataTest(SSS):
     fields = [('line1', str, 21),
@@ -237,7 +303,7 @@ class SSSUserDataTest(SSS):
 # 0xfb Freeform text/failure description (4*21 characters)
 # 0xff End of record
 
-Tests = {
+TestsVersion1 = {
     0x01: ('Visual Pass (01)', SSSVisualTest),
     0x02: ('Visual Fail (02)', SSSVisualTest),
     0xf0: ('Overall Pass (F0)', SSSNoDataTest),
@@ -249,18 +315,28 @@ Tests = {
     0xfb: ('User data (FB)', SSSUserDataTest),
     0xff: ('End of Record (FF)', SSSNoDataTest),
     }
+
+TestsVersion2 = {
+    0x11: ('Visual Pass v2 (11)', SSSVisualTest),
+    0x12: ('Visual Fail v2 (02)', SSSVisualTest),
+    0xe0: ('Unknown (E0)', SSSUnknownE0Test),
+    0xe1: ('Retest (E1)', SSSRetestTest),
+    0xf2: ('Earth Resistance v2 (F2)', SSSEarthResistanceTestv2),
+    0xf3: ('Earth Insulation v2 (F3)', SSSEarthInsulationTestv2),
+    0xf6: ('Load/Leakage v2 (F6)', SSSPowerLeakTestv2),
+    0xf8: ('Continuity v2 (F8)', SSSContinuityTestv2),
+    0xf9: ('Lead Continuity Pass (F9)', SSSNoDataTest),
+    0xfe: ('Software Version (FE)', SSSSoftwareVersionTest),
+    }
     
 
-import struct
-import functools
-from functools import partial
-
-def main(filename = 'SSS'):
-    if len(sys.argv) > 1:
-        filename = sys.argv[1]
+def parse_sss(filename):
     f = open(filename, 'r')
     r = SSSRecordHeader()
     for header in iter(lambda: f.read(len(r)), ''):
+        Tests = TestsVersion1.copy()
+        version = 1
+
         r.unpack(header)
         payload = f.read(r.data['payload_length'])
         r.checksum(payload)
@@ -270,6 +346,10 @@ def main(filename = 'SSS'):
         while len(payload) and test_type != 0xff:
             test_type = ord(payload[0])
             payload = payload[1:]
+            # Add in newer-style records if detected by presence of 0x11/0x12
+            if version == 1 and test_type in (0x11, 0x12):
+                version += 1
+                Tests.update(TestsVersion2)
             t = Tests[test_type][1]()
             # Unpack the current sub-field
             t.unpack(payload[:len(t)])
@@ -277,10 +357,20 @@ def main(filename = 'SSS'):
 
             # Seek past to start of next sub-field
             payload = payload[len(t):]
+            #print `payload`
 
         # Line-break between records.
         print
-        
+
+def main():
+    if len (sys.argv) < 2:
+        print >>sys.stderr, "usage: %s [input.sss]" % sys.argv[0]
+        sys.exit(2)
+
+    # Simplify testing/dumping by allowing multiple input files on the command-line
+    for filename in sys.argv[1:]:
+        print 'trying "%s"' % filename
+        parse_sss(filename)
 
 if __name__=='__main__':
     main()
