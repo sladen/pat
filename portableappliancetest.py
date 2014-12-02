@@ -318,7 +318,7 @@ TestsVersion1 = {
 
 TestsVersion2 = {
     0x11: ('Visual Pass v2 (11)', SSSVisualTest),
-    0x12: ('Visual Fail v2 (02)', SSSVisualTest),
+    0x12: ('Visual Fail v2 (12)', SSSVisualTest),
     0xe0: ('Unknown (E0)', SSSUnknownE0Test),
     0xe1: ('Retest (E1)', SSSRetestTest),
     0xf2: ('Earth Resistance v2 (F2)', SSSEarthResistanceTestv2),
