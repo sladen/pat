@@ -17,10 +17,11 @@
 # version number.  There is no-end of file marker or overall checksum.
 #
 # == Archive records ==
-# Each file stored within the contain is prefixed by a header giving
-# the other all size of the record, a variable length human-readable
-# string (filename), a monotonically increasingly truncated
-# semi-timestamp plus uncompressed (before Deflate) length.
+# Each file stored within the container is prefixed by a record header
+# giving the overall size of the record, a variable length
+# human-readable string that is the filename, a monotonically
+# increasingly truncated semi-timestamp, plus uncompressed (before
+# Deflate) length.
 #
 # == Compression ==
 # Compression is straight Deflate (aka zlib)---as is used in zipfiles
@@ -32,7 +33,7 @@
 # == Obfuscation ==
 # The compressed Deflate streams are additively perturbed using the
 # bottom 8-bits from Marsaglia xorshift PNR, seeded from the
-# pseudo-timestamp and payload length of the correspoding file.
+# pseudo-timestamp and payload length of the corresponding file.
 #
 # == Integrity checking ==
 # The Deflate checksum provides the only defacto integrity checking in
