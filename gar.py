@@ -1,4 +1,42 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# Paul Sladen, 2014-12-04, Seaward GAR PAT testing file format debug harness
+# Hereby placed in the public domain in the hopes of improving
+# electrical safety and interoperability.
+
+# == GAR ==
+# GAR files are a container format used for importing/exporting
+# filesets to and from some Seaward PAT testing machines ("Apollo"
+# series?).  As of 2014-12-05 I have seen three examples of '.GAR'
+# files; one purporting to contain an .SSS file and a selection of
+# JPEGs and two purporting to contain just an .SSS file.
+#
+# == File Header ==
+# There is a single file-header that begins 0xcabcab (CAB CAB;
+# cabinet?) for identification purposes, followed by single byte
+# version number.  There is no-end of file marker or overall checksum.
+#
+# == Archive records ==
+# Each file stored within the contain is prefixed by a header giving
+# the other all size of the record, a variable length human-readable
+# string (filename), a monotonically increasingly truncated
+# semi-timestamp plus uncompressed (before Deflate) length.
+#
+# == Compression ==
+# Compression is straight Deflate (aka zlib)---as is used in zipfiles
+# and PNG images.  This reduces the largely fixed-field .SSS files to
+# ~10% of their input size, while the already-compressed JPEG files
+# remain ~99% of their input size.  Each file's payload is compressed
+# separately.
+# 
+# == Obfuscation ==
+# The compressed Deflate streams are additively perturbed using the
+# bottom 8-bits from Marsaglia xorshift PNR, seeded from the
+# pseudo-timestamp and payload length of the correspoding file.
+#
+# == Integrity checking ==
+# The Deflate checksum provides the only defacto integrity checking in
+# the GAR file-format.
 
 import struct
 import sys
