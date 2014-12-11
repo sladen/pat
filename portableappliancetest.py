@@ -141,6 +141,10 @@ class SSS(sdb):
         r = super(SSS, self).unpack(s)
         r.fixup()
         return self
+    def rescale(self, key):
+        self.data[key] = (10**-(self.data[key] >> 14)) * (self.data[key] & 0x3fff)
+    def passed(self, key = 'pass'):
+        self.data[key] = bool(self.data[key] == 1)
 
 class SSSRecordHeader(SSS):
     fields = [('payload_length', int, 2),
@@ -149,7 +153,7 @@ class SSSRecordHeader(SSS):
     def checksum(self, payload):
         # checksum is the sum value of all the bytes in the payload portion
         self.data['checksum_payload'] = sum(map(ord,payload)) & 0xffff
-        match = bool(self.data['checksum_header'] == self.data['checksum_header'])
+        match = (self.data['checksum_header'] == self.data['checksum_payload'])
         self.data['checksum_match'] = match
         return match
 
@@ -174,24 +178,22 @@ class SSSEarthResistanceTest(SSS):
     fields = [('resistance', int, 2),
               ]
     def fixup(self):
-        self.data['pass'] = bool(self.data['resistance'] >> 15)
-        self.data['resistance'] = 0.01 * (self.data['resistance'] & 0x7fff)
+        self.rescale('resistance')
 
 class SSSEarthResistanceTestv2(SSS):
     fields = [('current', int, 1),
-              ('samples', int, 1),
+              ('pass', int, 1),
               ('resistance', int, 2),
               ]
     def fixup(self):
-        self.data['pass'] = bool(self.data['resistance'] >> 15)
-        self.data['resistance'] = 0.01 * (self.data['resistance'] & 0x7fff)
+        self.rescale('resistance')
+        self.passed()
 
 class SSSEarthInsulationTest(SSS):
     fields = [('resistance', int, 2),
               ]
     def fixup(self):
-        self.data['overscale'] = not bool(self.data['resistance'] >> 15)
-        self.data['actual_resistance'] = 0.01 * (self.data['resistance'] & 0x7fff)
+        self.rescale('resistance')
         # Note: the displayed resistance for the Earth Insulation test
         # is capped at 19.99 MOhms or 99.99 MOhms depending upon the
         # model of meter.  Internally the meters appears to treat
@@ -200,75 +202,92 @@ class SSSEarthInsulationTest(SSS):
         # For simple result reporting, the value is capped to 99.99
         # MOhms, inline which what other software (and the meter's
         # display) does.
-        self.data['resistance'] = min(99.99, 0.01 * (self.data['resistance'] & 0x7fff))
+        #self.data['resistance'] = min(99.99, 0.01 * (self.data['resistance'] & 0x7fff))
+
+class SSSCurrentTest(SSS):
+    fields = [('current', int, 2),
+              ]
+    def fixup(self):
+        self.rescale('current')
+
+class SSSCurrentTestv2(SSS):
+    fields = [('pass', int, 1),
+              ('current', int, 2),
+              ]
+    def fixup(self):
+        self.rescale('current')
+        self.passed()
 
 class SSSEarthInsulationTestv2(SSS):
-    fields = [('samples', int, 1),
+    fields = [('pass', int, 1),
               ('resistance', int, 2),
               ]
     def fixup(self):
-        self.data['overscale'] = not bool(self.data['resistance'] >> 15)
-        self.data['actual_resistance'] = 0.01 * (self.data['resistance'] & 0x7fff)
-        self.data['resistance'] = min(99.99, 0.01 * (self.data['resistance'] & 0x7fff))
+        self.rescale('resistance')
+        self.passed()
 
 class SSSPowerLeakTest(SSS):
     fields = [('leakage', int, 2),
               ('load', int, 2),
               ]
     def fixup(self):
-        self.data['pass'] = bool(self.data['leakage'] >> 15)
         # Note: The 10/16ths current (load) scaling factor was
         # obtained from a sample size of two results only, both of
         # which were the same... Caveat emptor!
-        self.data['load'] = 0.1/16.0 * self.data['load']
-        self.data['leakage'] = 0.01 * (self.data['leakage'] & 0x7fff)
+        self.rescale('leakage')
+        self.rescale('load')
 
 class SSSPowerLeakTestv2(SSS):
-    fields = [('samples', int, 1),
+    fields = [('pass', int, 1),
               ('leakage', int, 2),
               ('load', int, 2),
               ]
     def fixup(self):
-        self.data['pass'] = bool(self.data['leakage'] >> 15)
-        self.data['load'] = 0.01 * self.data['load']
-        self.data['leakage'] = 0.1 * (self.data['leakage'] & 0x7fff)
+        self.data['pass'] = bool(self.data['pass'])
+        self.rescale('leakage')
+        self.rescale('load')
 
 class SSSContinuityTest(SSS):
     fields = [('resistance', int, 2),
               ]
     def fixup(self):
-        self.data['pass'] = bool(self.data['resistance'] >> 15)
+        self.rescale('resistance')
         # Zero appears to correspond to infinity (no connection).
         # Which at least one other output software apparently shows as
         # "(no result)", instead of a numerical value.  This reported
         # behaviour is copied here.
-        if self.data['resistance'] & 0x7fff == 0:
+        if self.data['resistance'] == 0.0:
             self.data['resistance'] = '(no result)'
-        else:
-            self.data['resistance'] = 0.01 * (self.data['resistance'] & 0x7fff)
 
 class SSSContinuityTestv2(SSS):
-    fields = [('samples', int, 1),
+    fields = [('pass', int, 1),
               ('resistance', int, 2),
               ]
     def fixup(self):
-        self.data['pass'] = bool(self.data['resistance'] >> 15)
+        self.rescale('resistance')
+        self.passed()
         # Zero appears to correspond to infinity (no connection).
         # Which at least one other output software apparently shows as
         # "(no result)", instead of a numerical value.  This reported
         # behaviour is copied here.
-        if self.data['resistance'] & 0x7fff == 0:
+        if self.data['resistance'] == 0.0:
             self.data['resistance'] = '(no result)'
-        else:
-            self.data['resistance'] = 0.01 * (self.data['resistance'] & 0x7fff)
 
-class SSSUnknownE0Test(SSS):
-    # Alternatively (0xe1 0x00 could be the baud rate at 57600)
-    fields = [('samples', int, 1),
-              ('unknown1', int, 1),
-              ('unknown2', int, 1),
-              ('unknown3', int, 1),
+class SSSUserDataMappingTest(SSS):
+    fields = [('mapping1', int, 1),
+              ('mapping2', int, 1),
+              ('mapping3', int, 1),
+              ('mapping4', int, 1),
               ]
+    mappings = {0: 'Notes',
+                1: 'Asset Description',
+                2: 'Asset Group',
+                3: 'Make',
+                4: 'Model',
+                5: 'Serial No.'}
+    def fixup(self):
+        for k,v in self.data.items():
+            self.data['meaning' + k[-1]] = self.mappings[v]
 
 class SSSRetestTest(SSS):
     fields = [('nulls', int, 1),
@@ -306,27 +325,34 @@ class SSSUserDataTest(SSS):
 TestsVersion1 = {
     0x01: ('Visual Pass (01)', SSSVisualTest),
     0x02: ('Visual Fail (02)', SSSVisualTest),
+    0x10: ('Unknown (10)', SSSNoDataTest),
+    0xe0: ('User Data Mapping (E0)', SSSUserDataMappingTest),
+    0xe1: ('Retest (E1)', SSSRetestTest),
     0xf0: ('Overall Pass (F0)', SSSNoDataTest),
     0xf1: ('Overall Fail (F1)', SSSNoDataTest),
     0xf2: ('Earth Resistance (F2)', SSSEarthResistanceTest),
     0xf3: ('Earth Insulation (F3)', SSSEarthInsulationTest),
+    0xf4: ('Substitute Leakage (F4)', SSSCurrentTest),
+    0xf5: ('Flash Leakage (F5)', SSSCurrentTest),
     0xf6: ('Load/Leakage (F6)', SSSPowerLeakTest),
+    0xf7: ('Flash Leakage (F5)', SSSCurrentTest),
     0xf8: ('Continuity (F8)', SSSContinuityTest),
     0xfb: ('User data (FB)', SSSUserDataTest),
+    0xfe: ('Software Version (FE)', SSSSoftwareVersionTest),
     0xff: ('End of Record (FF)', SSSNoDataTest),
     }
 
 TestsVersion2 = {
     0x11: ('Visual Pass v2 (11)', SSSVisualTest),
     0x12: ('Visual Fail v2 (12)', SSSVisualTest),
-    0xe0: ('Unknown (E0)', SSSUnknownE0Test),
-    0xe1: ('Retest (E1)', SSSRetestTest),
     0xf2: ('Earth Resistance v2 (F2)', SSSEarthResistanceTestv2),
     0xf3: ('Earth Insulation v2 (F3)', SSSEarthInsulationTestv2),
+    0xf4: ('Substitute Leakage v2 (F4)', SSSCurrentTestv2),
+    0xf5: ('Flash Leakage v2 (F5)', SSSCurrentTestv2),
     0xf6: ('Load/Leakage v2 (F6)', SSSPowerLeakTestv2),
+    0xf7: ('Flash Leakage v2 (F7)', SSSCurrentTestv2),
     0xf8: ('Continuity v2 (F8)', SSSContinuityTestv2),
     0xf9: ('Lead Continuity Pass (F9)', SSSNoDataTest),
-    0xfe: ('Software Version (FE)', SSSSoftwareVersionTest),
     }
     
 
@@ -339,9 +365,11 @@ def parse_sss(filename):
 
         r.unpack(header)
         payload = f.read(r.data['payload_length'])
-        r.checksum(payload)
+        validated = r.checksum(payload)
         #print 'Checksum {pass: %s}' % bool(checksum == r.data['checksum'])
         print 'New Record', r.items_dict()
+        if not validated:
+            return
         test_type = None
         while len(payload) and test_type != 0xff:
             test_type = ord(payload[0])
