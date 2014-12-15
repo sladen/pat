@@ -74,6 +74,7 @@
 import struct, sys
 import string
 import collections
+import StringIO
 
 # Code is in the main() function at the bottom.  Above are helper
 # classes, and then classes for parsing the 'SSS' format itself.
@@ -354,10 +355,12 @@ TestsVersion2 = {
     0xf8: ('Continuity v2 (F8)', SSSContinuityTestv2),
     0xf9: ('Lead Continuity Pass (F9)', SSSNoDataTest),
     }
-    
 
-def parse_sss(filename):
-    f = open(filename, 'r')
+class SSSSyntaxError(SyntaxError):
+    pass
+
+def parse_sss(filehandle):
+    f = filehandle
     r = SSSRecordHeader()
     for header in iter(lambda: f.read(len(r)), ''):
         Tests = TestsVersion1.copy()
@@ -368,7 +371,10 @@ def parse_sss(filename):
         validated = r.checksum(payload)
         #print 'Checksum {pass: %s}' % bool(checksum == r.data['checksum'])
         print 'New Record', r.items_dict()
+        if r.data['payload_length'] == 0:
+            raise SSSSyntaxError('Zero length payload')
         if not validated:
+            raise SSSSyntaxError('Checksum validation failed')
             return
         test_type = None
         while len(payload) and test_type != 0xff:
@@ -398,7 +404,14 @@ def main():
     # Simplify testing/dumping by allowing multiple input files on the command-line
     for filename in sys.argv[1:]:
         print 'trying "%s"' % filename
-        parse_sss(filename)
+        f = open(filename, 'r')
+        contents = f.read()
+        wrapped = StringIO.StringIO(contents)
+        try:
+            parse_sss(wrapped)
+        except SSSSyntaxError, message:
+            print 'End File {Error:"%s"}' % message
+            continue
 
 if __name__=='__main__':
     main()
