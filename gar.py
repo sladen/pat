@@ -55,6 +55,7 @@
 import struct
 import sys
 import numpy
+import zlib
 
 # Marsaglia xorshift
 # https://en.wikipedia.org/wiki/Xorshift
@@ -70,51 +71,69 @@ def marsaglia_xorshift_128(x = 123456789, y = 362436069, z = 521288629, w = 8867
 def deobfuscate_string(pnr, obfuscated):
     return ''.join([chr((ord(c) - pnr.next()) & 0xff) for c in obfuscated])
 
-def gar_extract(filename):
-    f = open(filename, 'rb')
-    header = struct.unpack('>L', f.read(4))[0]
-    cabcab = header >> 8
-    version = header & 0xff
-    assert cabcab == 0xcabcab and version == 1
-    files = 1
+# Remove spaces and directory slashes
+def clean_filename(unsafe_filename):
+    return unsafe_filename.replace('/','_').replace(' ','_').replace('\\','_')
+
+def gar_extract(container_filename):
+    # Try to read the filename we've been asked to parse
+    container = open(container_filename, 'rb')
+
+    # The GAR container's magic number is 0xcabcab
+    container_header = struct.unpack('>L', container.read(4))[0]
+    cabcab, container_version = container_header >> 8, container_header & 0xff
+    assert cabcab == 0xcabcab and container_version == 1
+
+    # The container has no end-of-file marker, it ends when there are no more records
     while True:
-        s = f.read(4)
-        # There is no End-of-file marker, just no more packets
-        if len(s) < 4: break
-        sub_filename_length, = struct.unpack('>L', s)
-        sub_filename = f.read(sub_filename_length)
-        compressed_length, = struct.unpack('>L', f.read(4))
-        contents = f.read(compressed_length)
-        header_length, compression_method, checksum, payload_length = struct.unpack('>HHLL', contents[:12])
-        assert header_length == 0x0c and compression_method == 0x01
-        print '"%s" (%d characters): %d bytes, %d uncompressed (%+d bytes %2.2f%%), checksum/timestamp?: %#10x' % \
-            (sub_filename,
-             sub_filename_length,
-             compressed_length,
-             payload_length,
-             payload_length - compressed_length - header_length,
-             100.0 * float(compressed_length) / (payload_length),
-             checksum)
+        s = container.read(4)
+        if len(s) < 4:
+            break
 
-        # histogram shows even spread, which means either compressed
-        # input (probably zlib) or input XOR'ed with a pseudo-random stream
-        a, b = numpy.histogram(map(ord,contents), bins=xrange(257))
-        #print dict(zip(b,a))
-        #print sorted(a, reverse=True)[0]
+        # The record headers start with a variable length filename string
+        filename_length, = struct.unpack('>L', s)
+        filename = container.read(filename_length)
 
-        # test for simple XORing (now disproved)
-        #for i in 0x00,:
-        #    new = ''.join([chr(ord(c) ^ i) for c in contents ])
-        #    g = open('output/' + str(files) + "." + str(i) + '.test', 'wb')
-        #    g.write(new)
-        #    g.close()
+        # Followed by variable length compressed + obfuscated file contents
+        compressed_length, = struct.unpack('>L', container.read(4))
+        contents = container.read(compressed_length)
+        header_length, mangling_method, truncated_timestamp, original_length = struct.unpack('>HHLL', contents[:12])
+        assert header_length == 12 and mangling_method == 1
 
-        files += 1
+        # The remainder of the contents is obfuscated with a Marsaglia xorshift PNR
+        pnr = marsaglia_xorshift_128(x = truncated_timestamp, y = original_length)
+        qcompress_prefix = deobfuscate_string(pnr, contents[12:16])
+        zlib_stream = deobfuscate_string(pnr, contents[16:])
 
+        # We can check the prefixed length matches up, and if so try to uncompress with zlib
+        expected_length, = struct.unpack(">L", qcompress_prefix)
+        assert original_length == expected_length
+        original = zlib.decompress(zlib_stream)
+
+        # And try to ensure that filename can be saved to the local directory
+        target_filename = filename
+        if filename == 'TestResults.sss':
+            if container_filename.endswith('.gar'):
+                target_filename = container_filename[:-4] + '_' + filename
+        safe_filename = clean_filename(target_filename)
+
+        # Assuming it all went well we can inform the user where it will be saved
+        assert original_length == expected_length == len(original)
+        print 'Saving "%s" (%2.0f%%) to "%s"' % \
+            (filename,
+             100.0 * float(compressed_length) / (original_length),
+             safe_filename)
+
+        # And tne write out the original uncompressed file to its appropriate name
+        f = open(safe_filename + '', 'wb')
+        f.write(original)
+        f.close()
+
+# Step though multiple '.gar' files being passed in one go
 def main():
     for gar in sys.argv[1:]:
-        print 'CAB/GAR filename "%s"' % gar
-        gar_extract(f)
+        print 'Trying CAB/GAR filename "%s"' % gar
+        gar_extract(gar)
 
 if __name__=='__main__':
     main()
