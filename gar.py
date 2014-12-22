@@ -18,10 +18,10 @@
 #
 # == Archive records ==
 # Each file stored within the container is prefixed by a record header
-# giving the overall size of the record, a variable length
-# human-readable string that is the filename, a monotonically
-# increasingly truncated semi-timestamp, plus uncompressed (before
-# Deflate) length.
+# giving the overall size of the record,
+# a variable length human-readable string (the filename),
+# a monotonically increasingly truncated semi-timestamp,
+# plus the original pre-compression length.
 #
 # == Compression ==
 # Compression is straight Deflate (aka zlib)---as is used in zipfiles
@@ -29,15 +29,28 @@
 # ~10% of their input size, while the already-compressed JPEG files
 # remain ~99% of their input size.  Each file's payload is compressed
 # separately.
+#
+# == Deflate ==
+# The QByteArray::qCompress() convention is used, this prepends an
+# extra four-byte header containing the little-endian uncompressed
+# size, followed by the two-byte zlib header, deflate
+# streamed, and four-byte zlib footer:
+# http://ehc.ac/p/ctypes/mailman/message/23484411/
+#
+# Note that as the contained files are likely to be well-under 65k in
+# length, the first 2 bytes are be nulls, which is a handy way to
+# sanity test the next step.  :-D
 # 
 # == Obfuscation ==
-# The compressed Deflate streams are additively perturbed using the
+# The qCompress-style compressed Deflate streams (with length prefix)
+# are additively perturbed (bytewise ADD/SUB, not XOR) using the
 # bottom 8-bits from Marsaglia xorshift PNR, seeded from the
 # pseudo-timestamp and payload length of the corresponding file.
 #
 # == Integrity checking ==
-# The Deflate checksum provides the only defacto integrity checking in
-# the GAR file-format.
+# The Zlib checksum provides the only defacto integrity checking in
+# the GAR file-format; however the presence of the duplicate
+# (obfuscated) file length is a useful double-check.
 
 import struct
 import sys
