@@ -56,7 +56,21 @@ import struct
 import sys
 import numpy
 
-def parse(filename):
+# Marsaglia xorshift
+# https://en.wikipedia.org/wiki/Xorshift
+# http://stackoverflow.com/questions/4508043/on-xorshift-random-number-generator-algorithm
+def marsaglia_xorshift_128(x = 123456789, y = 362436069, z = 521288629, w = 88675123):
+    while True:
+        t = (x ^ (x << 11)) & 0xffffffff
+        x, y, z = y, z, w
+        w = (w ^ (w >> 19) ^ (t ^ (t >> 8)))
+        yield w
+
+# The lower 8-bits from the Xorshift PNR are subtracted from byte values
+def deobfuscate_string(pnr, obfuscated):
+    return ''.join([chr((ord(c) - pnr.next()) & 0xff) for c in obfuscated])
+
+def gar_extract(filename):
     f = open(filename, 'rb')
     header = struct.unpack('>L', f.read(4))[0]
     cabcab = header >> 8
@@ -98,9 +112,9 @@ def parse(filename):
         files += 1
 
 def main():
-    for f in sys.argv[1:]:
-        print 'CAB/GAR filename "%s"' % f
-        parse(f)
+    for gar in sys.argv[1:]:
+        print 'CAB/GAR filename "%s"' % gar
+        gar_extract(f)
 
 if __name__=='__main__':
     main()
