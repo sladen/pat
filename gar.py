@@ -65,7 +65,7 @@
 # and from the original file-length.  The give-away for spotting
 # xorshift is that the first round output depends solely upon the
 # 'x' and 'w' inputs, enabling confirmation of 'x' (== timestamp)
-# indepentent to confirmation of 'y' (== original file length).
+# independent to confirmation of 'y' (== original file length).
 # 
 # 5. original length (little-endian, four octets)
 # 6. compressed contents (zlib)
