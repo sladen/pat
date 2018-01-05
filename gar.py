@@ -92,7 +92,7 @@ def marsaglia_xorshift_128(x = 123456789, y = 362436069, z = 521288629, w = 8867
 # values during extraction, and added to byte values on insertion.
 # When calling deobfuscate_string() the whole string is processed.
 def deobfuscate_string(pnr, obfuscated, operation=int.__sub__):
-    return ''.join([chr((ord(c) operation pnr.next()) & 0xff) for c in obfuscated])
+    return ''.join([chr((operation(ord(c), pnr.next())) & 0xff) for c in obfuscated])
 
 # Remove spaces and directory slashes from a string (filename).
 # This is useful for saving a file in the current directory, rather
